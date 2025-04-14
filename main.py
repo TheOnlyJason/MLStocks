@@ -51,7 +51,7 @@ def get_news_data_selenium(stock_symbol):
         headlines = WebDriverWait(driver, 30).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'h3')))
         
-        titles = []
+        titles = set()  # Use a set to store unique titles
         retries = 3  # Retry logic if stale element exception occurs
 
         for _ in range(len(headlines)):
@@ -64,9 +64,8 @@ def get_news_data_selenium(stock_symbol):
                         # Skip empty titles
                         if not title:
                             continue
-                        # Categorize the article as 'Good' or 'Bad'
-                        category = categorize_title(title)
-                        titles.append({'title': title, 'category': category})
+                        # Add title to set to avoid duplicates
+                        titles.add(title)
                     break  # Break if no stale element error occurs
                 except Exception as e:
                     print(f"Error on attempt {attempt+1} for stale element: {e}")
@@ -76,20 +75,21 @@ def get_news_data_selenium(stock_symbol):
 
     except Exception as e:
         print(f"An error occurred: {e}")
-        titles = []
+        titles = set()
 
     finally:
         # Clean up: Close the browser
         driver.quit()
 
-    return titles
+    # Convert the set of titles back to a list
+    return list(titles)
 
 # Test with Apple (AAPL)
-stock_symbol = "GOOG"
+stock_symbol = "AAPL"
 news_data = get_news_data_selenium(stock_symbol)
 
 # Categorize and plot the data
-categories = [article['category'] for article in news_data]
+categories = [categorize_title(article) for article in news_data]
 
 # Count occurrences of "Good" and "Bad"
 good_count = categories.count('Good')
@@ -100,12 +100,12 @@ labels = ['Good', 'Bad']
 counts = [good_count, bad_count]
 
 plt.bar(labels, counts, color=['green', 'red'])
-plt.title('Categorized News Articles for GOOG')
+plt.title('Categorized News Articles for AAPL')
 plt.ylabel('Number of Articles')
 plt.show()
 
 # Print out the categorized articles
-for article in news_data:
-    print(f"Title: {article['title']}")
-    print(f"Category: {article['category']}")
+for article, category in zip(news_data, categories):
+    print(f"Title: {article}")
+    print(f"Category: {category}")
     print("-" * 50)
