@@ -1,111 +1,274 @@
-import matplotlib.pyplot as plt
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import feedparser
+import requests
+from bs4 import BeautifulSoup
 import time
+from concurrent.futures import ThreadPoolExecutor
+import socket
+from textblob import TextBlob  # For sentiment analysis
+import matplotlib.pyplot as plt
+from io import BytesIO
+import base64
+from flask import Flask, render_template, request
 
-# Define "Good" and "Bad" keywords
-good_keywords = ['growth', 'investment', 'success', 'increase', 'positive', 'rise', 'boost', 'upward']
-bad_keywords = ['loss', 'decline', 'negative', 'problem', 'fall', 'drop', 'downward', 'crisis']
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend for Flask
 
-def categorize_title(title):
-    """
-    Categorize article titles into 'Good' or 'Bad' based on keywords.
-    """
-    # Convert title to lowercase for easier matching
-    title_lower = title.lower()
-    
-    # Check for presence of positive keywords
-    if any(keyword in title_lower for keyword in good_keywords):
-        return 'Good'
-    
-    # Check for presence of negative keywords
-    elif any(keyword in title_lower for keyword in bad_keywords):
-        return 'Bad'
-    
-    # Default to 'Bad' if no keyword matches
-    return 'Bad'
+app = Flask(__name__, static_folder='static')
 
-def get_news_data_selenium(stock_symbol):
-    url = f"https://finance.yahoo.com/quote/{stock_symbol}/news?p={stock_symbol}"
-
-    # Set up Chrome options for headless browsing (no GUI)
-    options = Options()
-    options.add_argument('--headless')  # Run headless (no GUI)
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-
-    # Initialize the WebDriver using ChromeDriver
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
-
+def get_recommendation(title, summary):
+    """Generate buy/sell/hold recommendation based on sentiment and keywords"""
     try:
-        # Load the URL
-        driver.get(url)
-
-        # Wait for the headlines to be visible
-        headlines = WebDriverWait(driver, 30).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'h3')))
+        # Combine title and summary for analysis
+        analysis_text = f"{title}. {summary}"
         
-        titles = set()  # Use a set to store unique titles
-        retries = 3  # Retry logic if stale element exception occurs
-
-        for _ in range(len(headlines)):
-            # Retry logic for stale elements
-            for attempt in range(retries):
-                try:
-                    headlines = driver.find_elements(By.CSS_SELECTOR, 'h3')
-                    for headline in headlines:
-                        title = headline.text.strip()
-                        # Skip empty titles
-                        if not title:
-                            continue
-                        # Add title to set to avoid duplicates
-                        titles.add(title)
-                    break  # Break if no stale element error occurs
-                except Exception as e:
-                    print(f"Error on attempt {attempt+1} for stale element: {e}")
-                    if attempt == retries - 1:
-                        print("Max retries reached for this element.")
-                    time.sleep(1)  # Sleep before retry
-
+        # Keyword analysis
+        positive_keywords = [
+            'buy', 'outperform', 'bullish', 'growth', 'positive outlook', 'strong performance',
+            'strong buy', 'recommend buying', 'rise', 'increase', 'upward trend', 'hit new highs',
+            'top pick', 'gain', 'record high', 'expected to increase', 'expected to outperform', 
+            'expected to rise', 'price target raised', 'stock gains', 'buy now', 'breakout', 'momentum',
+            'accelerate growth', 'strong earnings'
+        ]
+        negative_keywords = [
+            'sell', 'underperform', 'bearish', 'weak', 'cut', 'negative outlook', 'falling stock', 
+            'decline', 'weak performance', 'hold off', 'price target cut', 'sell-off', 'drop', 'downtrend', 
+            'sell recommendation', 'avoid', 'risk', 'losing streak', 'declining stock', 'losing market share', 
+            'falling short', 'bear market', 'slump', 'plummet', 'cut earnings forecast', 'expected to fall', 
+            'expected to underperform', 'downward revision', 'downward pressure'
+        ]
+        neutral_keywords = [
+            'hold', 'neutral', 'wait and see', 'steady', 'no clear direction', 'uncertain', 'market conditions',
+            'flat performance', 'no major changes', 'mixed results', 'expected to stabilize', 'holding steady',
+            'limited movement', 'unchanged', 'uncertain outlook', 'neutral stance'
+        ]
+        
+        # Check for strong explicit keywords in the title
+        if any(keyword in title.lower() for keyword in negative_keywords):
+            return "SELL", "Negative keywords detected in title"
+        elif any(keyword in title.lower() for keyword in positive_keywords):
+            return "BUY", "Positive keywords detected in title"
+        
+        # Count keyword matches in title and summary
+        positive_count = sum(keyword in analysis_text.lower() for keyword in positive_keywords)
+        negative_count = sum(keyword in analysis_text.lower() for keyword in negative_keywords)
+        neutral_count = sum(keyword in analysis_text.lower() for keyword in neutral_keywords)
+        
+        # Generate recommendation based on keyword counts
+        if negative_count > positive_count:
+            return "SELL", "More negative keywords detected"
+        elif positive_count > negative_count:
+            return "BUY", "More positive keywords detected"
+        elif neutral_count > 0:
+            return "HOLD", "Neutral keywords detected"
+        else:
+            # If no clear signal, fall back to sentiment analysis
+            sentiment = TextBlob(analysis_text).sentiment.polarity
+            if sentiment > 0.3:
+                return "BUY", "Strong positive sentiment"
+            elif sentiment < -0.3:
+                return "SELL", "Strong negative sentiment"
+            else:
+                return "HOLD", "Neutral sentiment"
+            
     except Exception as e:
-        print(f"An error occurred: {e}")
-        titles = set()
+        print(f"Recommendation error: {e}")
+        return "HOLD", "Unable to analyze"
 
-    finally:
-        # Clean up: Close the browser
-        driver.quit()
+def process_article(entry):
+    """Enhanced article processing with recommendation"""
+    try:
+        title = entry.title.strip()
+        print(f"Processing: {title[:60]}...")
+        
+        article_text = get_article_text(entry.link)
+        full_text = f"{title}. {article_text[:3000]}"
+        summary = summarize_with_free_api(full_text)
+        
+        # Get recommendation
+        rec, reason = get_recommendation(title, summary)
+        
+        return {
+            'title': title,
+            'summary': summary,
+            'url': entry.link,
+            'published': entry.get('published', 'N/A'),
+            'source': entry.get('source', {}).get('title', 'Unknown'),
+            'recommendation': rec,
+            'reason': reason
+        }
+    except Exception as e:
+        print(f"Error processing article: {e}")
+        return None
 
-    # Convert the set of titles back to a list
-    return list(titles)
 
-# Test with Apple (AAPL)
-stock_symbol = "AAPL"
-news_data = get_news_data_selenium(stock_symbol)
+def summarize_with_free_api(text):
+    """Improved summarization with multiple fallback options"""
+    # First try SMMRY API
+    try:
+        # Verify we can resolve the hostname first
+        socket.gethostbyname('api.smmry.com')
+        
+        response = requests.post(
+            "https://api.smmry.com",
+            params={
+                "SM_API_KEY": "1B3C4D5E6F7G8H9I0J",
+                "SM_LENGTH": 2
+            },
+            data={"sm_api_input": text},
+            timeout=15
+        )
+        if response.status_code == 200:
+            return response.json().get('sm_api_content', None)
+    except (socket.gaierror, requests.exceptions.RequestException) as e:
+        print(f"SMMRY API unavailable, using fallback: {e}")
+    
+    # Fallback 1: Simple text truncation with better sentence detection
+    sentences = text.split('. ')
+    if len(sentences) > 1:
+        return '. '.join(sentences[:2]) + '...'
+    
+    # Fallback 2: Return first 200 characters
+    return text[:200] + "..."
 
-# Categorize and plot the data
-categories = [categorize_title(article) for article in news_data]
+def get_article_text(url):
+    """Enhanced article text extraction"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9'
+        }
+        response = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Remove unwanted elements more aggressively
+        for element in soup(['script', 'style', 'nav', 'footer', 'iframe', 'aside', 'form', 'button', 'header']):
+            element.decompose()
+        
+        # Find main content using multiple strategies
+        article = (soup.find('article') or soup.find(class_=lambda x: x and any(cls in x.lower() for cls in ['content', 'article', 'main']))) or soup
+        
+        # Get clean paragraphs
+        paragraphs = []
+        for p in article.find_all('p')[:10]:
+            text = p.get_text().strip()
+            if len(text.split()) > 5:  # Only keep meaningful paragraphs
+                paragraphs.append(text)
+        
+        return ' '.join(paragraphs)
+    except Exception as e:
+        print(f"Error extracting article text: {e}")
+        return ""
 
-# Count occurrences of "Good" and "Bad"
-good_count = categories.count('Good')
-bad_count = categories.count('Bad')
+def process_article(entry):
+    """Enhanced article processing with recommendation"""
+    try:
+        title = entry.title.strip()
+        print(f"Processing: {title[:60]}...")
+        
+        article_text = get_article_text(entry.link)
+        full_text = f"{title}. {article_text[:3000]}"  # Increased context
+        
+        summary = summarize_with_free_api(full_text)
+        
+        # Get recommendation
+        rec, reason = get_recommendation(title, summary)
+        
+        return {
+            'title': title,
+            'summary': summary,
+            'url': entry.link,
+            'published': entry.get('published', 'N/A'),
+            'recommendation': rec,
+            'reason': reason
+        }
+    except Exception as e:
+        print(f"Error processing article: {e}")
+        return None
 
-# Plotting the binary classification as a bar chart
-labels = ['Good', 'Bad']
-counts = [good_count, bad_count]
+def get_news(stock_symbol, max_articles=20):
+    """Improved news fetching with better parallel processing"""
+    url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock_symbol}"
+    
+    try:
+        feed = feedparser.parse(url)
+        print(f"Total articles found in feed: {len(feed.entries)}")  # Log the number of articles fetched
+        
+        if not feed.entries:
+            print("No articles found in the RSS feed")
+            return []
+        
+        news_items = []
+        
+        # Process articles with dynamic thread count based on max_articles
+        max_workers = min(5, max(1, max_articles // 3))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for entry in feed.entries[:max_articles]:
+                futures.append(executor.submit(process_article, entry))
+                time.sleep(0.5)  # Reduced stagger time
+            
+            for future in futures:
+                result = future.result()
+                if result:
+                    news_items.append(result)
+        
+        return sorted(news_items, key=lambda x: x['published'], reverse=True)
+        
+    except Exception as e:
+        print(f"Error fetching news: {e}")
+        return []
+    
+def generate_pie_chart(articles):
+    """Generates a pie chart for buy/sell/hold recommendations."""
+    recommendations = {"BUY": 0, "SELL": 0, "HOLD": 0}
 
-plt.bar(labels, counts, color=['green', 'red'])
-plt.title('Categorized News Articles for AAPL')
-plt.ylabel('Number of Articles')
-plt.show()
+    # Count recommendations
+    for article in articles:
+        rec = article.get('recommendation', 'HOLD')  # Default to 'HOLD' if not present
+        if rec in recommendations:
+            recommendations[rec] += 1
 
-# Print out the categorized articles
-for article, category in zip(news_data, categories):
-    print(f"Title: {article}")
-    print(f"Category: {category}")
-    print("-" * 50)
+    # Data for the pie chart
+    labels = recommendations.keys()
+    sizes = recommendations.values()
+
+    # Plot the pie chart
+    fig, ax = plt.subplots(figsize=(7, 7))
+    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=['#4CAF50', '#F44336', '#FFC107'])
+    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+
+    # Save pie chart to a BytesIO object
+    img = BytesIO()
+    plt.savefig(img, format='png')
+    img.seek(0)
+
+    # Encode image to base64
+    img_base64 = base64.b64encode(img.getvalue()).decode('utf-8')
+    
+    return img_base64
+
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    stock_symbol = "TSLA"  # Default symbol
+
+    if request.method == 'POST':
+        stock_symbol = request.form['stock_symbol'].upper()  # Get stock symbol from form
+
+    articles = get_news(stock_symbol, max_articles=20)  # Fetch articles for the stock symbol
+
+    if not articles:
+        return "No articles were fetched. Check your internet connection or try again later."
+
+    # Generate the pie chart image in base64 format
+    pie_chart = generate_pie_chart(articles)
+    
+    return render_template('index.html', articles=articles, pie_chart=pie_chart)
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
+    
+
+
+
