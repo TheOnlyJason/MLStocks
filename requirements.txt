@@ -1,0 +1,15 @@
+# Core Requirements
+flask>=2.0.0
+yfinance>=0.1.70
+feedparser>=6.0.8
+beautifulsoup4>=4.9.3
+textblob>=0.15.3
+matplotlib>=3.4.0
+requests>=2.25.1
+python-dotenv>=0.19.0
+
+# Development/Optional
+gunicorn>=20.1.0  # For production deployment
+pytest>=6.2.4    # For testing
+nltk>=3.6.2       # For enhanced sentiment analysis
+
