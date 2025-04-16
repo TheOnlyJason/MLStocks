@@ -94,11 +94,7 @@ A web application that analyzes stock market news sentiment and displays real-ti
 
 ## 📌 Future Improvements
 
-- Add user authentication
+- Enhance stock recommendations by modeling trading patterns (technical indicators) alongside news sentiment analysis(eg. cup and handle, bullish, bearish, etc)
 - Store and track user watchlists
 - Add more news sources (Google Finance, CNBC)
-- Enhance summarization using GPT API or Hugging Face models
 
-## 📜 License
-
-This project is for educational and non-commercial use.
