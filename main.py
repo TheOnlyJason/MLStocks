@@ -8,12 +8,16 @@ from textblob import TextBlob  # For sentiment analysis
 import matplotlib.pyplot as plt
 from io import BytesIO
 import base64
-from flask import Flask, render_template, request
-
+from flask import Flask, render_template, request, jsonify
+import yfinance as yf
 import matplotlib
+from datetime import datetime, timedelta
+
 matplotlib.use('Agg')  # Use non-GUI backend for Flask
 
 app = Flask(__name__, static_folder='static')
+
+
 
 def get_recommendation(title, summary):
     """Generate buy/sell/hold recommendation based on sentiment and keywords"""
@@ -92,14 +96,13 @@ def process_article(entry):
             'summary': summary,
             'url': entry.link,
             'published': entry.get('published', 'N/A'),
-            'source': entry.get('source', {}).get('title', 'Unknown'),
+            'source': entry.get('source', {}).get('title', 'Unknown Source'),
             'recommendation': rec,
             'reason': reason
         }
     except Exception as e:
         print(f"Error processing article: {e}")
         return None
-
 
 def summarize_with_free_api(text):
     """Improved summarization with multiple fallback options"""
@@ -247,24 +250,77 @@ def generate_pie_chart(articles):
     
     return img_base64
 
+# Add this new function to fetch stock data
+def get_stock_data(stock_symbol):
+    """Fetch live stock data using yfinance"""
+    try:
+        stock = yf.Ticker(stock_symbol)
+        data = stock.history(period='1d')
+        
+        if data.empty:
+            return None
+            
+        # Get additional info
+        info = stock.info
+        return {
+            'symbol': stock_symbol,
+            'current_price': round(data['Close'].iloc[-1], 2),
+            'previous_close': round(info.get('regularMarketPreviousClose', data['Close'].iloc[-2] if len(data) > 1 else data['Close'].iloc[-1]), 2),
+            'change': round(data['Close'].iloc[-1] - info.get('regularMarketPreviousClose', data['Close'].iloc[-2] if len(data) > 1 else data['Close'].iloc[-1]), 2),
+            'change_percent': round((data['Close'].iloc[-1] / info.get('regularMarketPreviousClose', data['Close'].iloc[-2] if len(data) > 1 else data['Close'].iloc[-1]) - 1) * 100, 2),
+            'name': info.get('shortName', stock_symbol),
+            'market_cap': f"{info.get('marketCap', 0)/1e9:.2f}B" if info.get('marketCap') else 'N/A'
+        }
+    except Exception as e:
+        print(f"Error fetching stock data: {e}")
+        return None
+    
+def get_historical_data(stock_symbol, period='1mo'):
+    """Fetch historical stock data for charting with different time periods"""
+    try:
+        stock = yf.Ticker(stock_symbol)
+        hist = stock.history(period=period)
+        
+        if hist.empty:
+            return None
+            
+        return {
+            'dates': [date.strftime('%Y-%m-%d') for date in hist.index],
+            'prices': [round(price, 2) for price in hist['Close'].tolist()],
+            'volumes': [int(vol) for vol in hist['Volume'].tolist()],
+            'period': period
+        }
+    except Exception as e:
+        print(f"Error fetching historical data: {e}")
+        return None
 
+@app.route('/get_chart_data')
+def get_chart_data():
+    stock_symbol = request.args.get('symbol', 'TSLA')
+    period = request.args.get('period', '1mo')
+    data = get_historical_data(stock_symbol, period)
+    return jsonify(data)
+
+# Update your index route
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    stock_symbol = "TSLA"  # Default symbol
+    stock_symbol = request.args.get('stock_symbol', 'TSLA').upper()
 
-    if request.method == 'POST':
-        stock_symbol = request.form['stock_symbol'].upper()  # Get stock symbol from form
-
-    articles = get_news(stock_symbol, max_articles=20)  # Fetch articles for the stock symbol
-
+    articles = get_news(stock_symbol, max_articles=20)
+    stock_data = get_stock_data(stock_symbol)
+    historical_data = get_historical_data(stock_symbol)
+    
     if not articles:
         return "No articles were fetched. Check your internet connection or try again later."
 
-    # Generate the pie chart image in base64 format
     pie_chart = generate_pie_chart(articles)
     
-    return render_template('index.html', articles=articles, pie_chart=pie_chart)
-
+    return render_template('index.html', 
+                        articles=articles, 
+                        pie_chart=pie_chart,
+                        stock_data=stock_data,
+                        stock_symbol=stock_symbol,
+                        historical_data=historical_data)
 
 if __name__ == "__main__":
     app.run(debug=True)
