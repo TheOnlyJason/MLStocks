@@ -1,12 +1,12 @@
-# 📈 Stock News Analyzer
+# Stock News Analyzer 📈📰
 
-**Stock News Analyzer** is a web application that aggregates stock-related news, performs sentiment analysis, and provides a recommendation (BUY, SELL, HOLD) for each article. It also visualizes historical price data and overall sentiment distribution via dynamic charts.
+![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
+![Flask](https://img.shields.io/badge/flask-2.0+-lightgrey.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![Screenshot](Screenshot1.png)
-![Screenshot](Screenshot2.png)
-![Screenshot](Screenshot3.png)
-
-## 🚀 Features
+A web application that analyzes stock market news sentiment and displays real-time stock data with interactive visualizations.
+  
+- ## 🚀 Features
 
 - 🔎 Search for stock news by ticker symbol (e.g., `TSLA`, `AAPL`)
 - 📰 Fetches latest financial news from Yahoo Finance RSS feeds
@@ -14,6 +14,11 @@
 - 📊 Displays dynamic stock price and volume charts with Chart.js
 - 🥧 Visualizes sentiment breakdown using Matplotlib pie chart
 - ⚡ Built with Flask, BeautifulSoup, TextBlob, and yFinance
+
+![Screenshot](Screenshot1.png)
+![Screenshot](Screenshot2.png)
+![Screenshot](Screenshot3.png)
+
 
 ## 🛠 Tech Stack
 
@@ -43,6 +48,13 @@
 ├── requirements.txt      # Python dependencies (recommended to create)
 └── README.md             # This file
 ```
+
+## Installation 🛠️
+
+### Prerequisites
+- Python 3.8+
+- pip package manager
+- 
 
 ## 🔧 How to Run Locally
 
