@@ -2,7 +2,7 @@
 
 **Stock News Analyzer** is a web application that aggregates stock-related news, performs sentiment analysis, and provides a recommendation (BUY, SELL, HOLD) for each article. It also visualizes historical price data and overall sentiment distribution via dynamic charts.
 
-![App Screenshot](https://via.placeholder.com/800x400?text=Demo+Screenshot)
+!Screenshot1.png
 
 ## 🚀 Features
 
