@@ -70,8 +70,7 @@ A web application that analyzes stock market news sentiment and displays real-ti
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
-3. **Install dependencies**  
-   *(Create a `requirements.txt` if not already there)*  
+3. **Install dependencies**   
    ```bash
    pip install -r requirements.txt
    ```
