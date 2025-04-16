@@ -60,7 +60,7 @@ A web application that analyzes stock market news sentiment and displays real-ti
 
 1. **Clone the repo**  
    ```bash
-   git clone https://github.com/your-username/stock-news-analyzer.git
+   git clone https://github.com/TheOnlyJason/MLStocks.git
    cd stock-news-analyzer
    ```
 
